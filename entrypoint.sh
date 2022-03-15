@@ -26,15 +26,13 @@ fi
 
 # Write html5 client default settings
 echo "INFO: writing HTML5 default-settings.txt"
+sudo rm -f /usr/share/xpra/www/default-settings.txt.*
 if [[ -n "${XPRA_HTML5_DEFAULT_SETTINGS}" ]]; then
-  sudo rm -f /usr/share/xpra/www/default-settings.txt.*
   echo "${XPRA_HTML5_DEFAULT_SETTINGS}" | sudo tee /usr/share/xpra/www/default-settings.txt
 fi
 
-# Copy clipboard direction so that it can be passed to the html5 client.
-echo "clipboard_direction = ${XPRA_CLIPBOARD_DIRECTION:-"both"}" | sudo tee -a /usr/share/xpra/www/default-settings.txt
-
 # Set default Selkies xpra-html5 settings.
+[[ -z "${XPRA_HTML5_SETTING_clipboard_direction}" ]] && export XPRA_HTML5_SETTING_clipboard_direction=${XPRA_CLIPBOARD_DIRECTION:-"both"}
 [[ -z "${XPRA_HTML5_SETTING_video}" ]] && export XPRA_HTML5_SETTING_video="false"
 [[ -z "${XPRA_HTML5_SETTING_encoding}" ]] && export XPRA_HTML5_SETTING_encoding="jpeg"
 [[ -z "${XPRA_HTML5_SETTING_keyboard}" ]] && export XPRA_HTML5_SETTING_keyboard="false"
@@ -44,9 +42,13 @@ echo "clipboard_direction = ${XPRA_CLIPBOARD_DIRECTION:-"both"}" | sudo tee -a /
 [[ -z "${XPRA_HTML5_SETTING_toolbar_position}" ]] && export XPRA_HTML5_SETTING_toolbar_position="top"
 [[ -z "${XPRA_HTML5_SETTING_device_dpi_scaling}" ]] && export XPRA_HTML5_SETTING_device_dpi_scaling="true"
 [[ -z "${XPRA_HTML5_SETTING_browser_native_notifications}" ]] && export XPRA_HTML5_SETTING_browser_native_notifications="false"
+[[ -z "${XPRA_HTML5_SETTING_remote_apps}" ]] && export XPRA_HTML5_SETTING_remote_apps="true"
 
 # Path prefix for xpra when behind nginx proxy.
 [[ -z "${XPRA_HTML5_SETTING_path}" && -n "${XPRA_WS_PATH}" ]] && export XPRA_HTML5_SETTING_path="${XPRA_WS_PATH}"
+
+# Path prefix for selkies app.
+[[ -z "${XPRA_HTML5_SETTING_apppath}" && -n "${XPRA_PWA_APP_PATH}" ]] && export XPRA_HTML5_SETTING_apppath="${XPRA_PWA_APP_PATH}"
 
 # Write variables prefixed with XPRA_HTML5_SETTING_ to default-settings file
 for v in "${!XPRA_HTML5_SETTING_@}"; do
@@ -70,7 +72,7 @@ else
 fi
 
 # Make default-settings.txt entries unique
-uniq /usr/share/xpra/www/default-settings.txt > /tmp/default-settings.txt && \
+sort /usr/share/xpra/www/default-settings.txt | uniq > /tmp/default-settings.txt && \
   sudo mv /tmp/default-settings.txt /usr/share/xpra/www/default-settings.txt
 sudo rm -f /usr/share/xpra/www/default-settings.txt.gz
 
@@ -100,7 +102,22 @@ if [[ -n "${XPRA_PWA_ICON_URL}" ]]; then
     DEST_FILE=/tmp/icon.svg
     echo "${XPRA_PWA_ICON_URL}" | cut -d ',' -f2 | base64 -d > /tmp/icon.svg
   else
-    curl -o ${DEST_FILE} -s -f -L "${XPRA_PWA_ICON_URL}" || true
+    curl -o /tmp/icon.dat -s -f -L "${XPRA_PWA_ICON_URL}" || true
+    format=""
+    ftype=$(file /tmp/icon.dat || true)
+    if echo "$ftype" | grep -i -q "svg"; then
+      format="svg"
+    elif echo "$ftype" | grep -i -q "jpeg"; then
+      format="jpg"
+    elif echo "$ftype" | grep -i -q "png"; then
+      format="png"
+    else
+      echo "WARN: unsupported icon image format: ${ftype}, PWA features may not be available."
+    fi
+    if [[ -n "$format" ]]; then
+      mv /tmp/icon.dat /tmp/icon.${format}
+      convert /tmp/icon.${format} /tmp/icon.png || true
+    fi
   fi
   if [[ -e ${DEST_FILE} ]]; then
     echo "INFO: Creating PWA icon sizes"
@@ -112,6 +129,37 @@ if [[ -n "${XPRA_PWA_ICON_URL}" ]]; then
     sudo ln -s /usr/share/xpra/www/icon-180x180.png /usr/share/xpra/www/apple-touch-icon.png || true
   else
     echo "WARN: failed to download PWA icon, PWA features may not be available: ${XPRA_PWA_ICON_URL}"
+  fi
+fi
+
+if [[ -n "${XPRA_BACKGROUND_URL}" ]]; then
+  echo "INFO: Processing Xpra background image"
+  DEST_FILE=/tmp/background.png
+  if [[ "${XPRA_BACKGROUND_URL}" =~ "data:image/png;base64" ]]; then
+    echo "${XPRA_BACKGROUND_URL}" | cut -d ',' -f2 | base64 -d > ${DEST_FILE}
+  else
+    curl -o /tmp/background.dat -s -f -L "${XPRA_BACKGROUND_URL}" || true
+    format=""
+    ftype=$(file /tmp/background.dat || true)
+    if echo "$ftype" | grep -i -q "svg"; then
+      format="svg"
+    elif echo "$ftype" | grep -i -q "jpeg"; then
+      format="jpg"
+    elif echo "$ftype" | grep -i -q "png"; then
+      format="png"
+    else
+      echo "WARN: unsupported background image format: ${ftype}, background will not be available."
+    fi
+    if [[ -n "$format" ]]; then
+      mv /tmp/background.dat /tmp/icon.${format}
+      convert /tmp/background.${format} ${DEST_FILE} || true
+    fi
+  fi
+  if [[ -e ${DEST_FILE} ]]; then
+    echo "INFO: Creating background image"
+    sudo convert -background none ${DEST_FILE} /usr/share/xpra/www/background.png || true
+  else
+    echo "WARN: no background file found."
   fi
 fi
 
@@ -161,10 +209,17 @@ watchLogs &
 
 # Start nginx proxy
 if [[ "${XPRA_DISABLE_PROXY:-false}" == "false" ]]; then
-  sudo sed -i "s|proxy_pass .*;|proxy_pass http://127.0.0.1:${XPRA_PORT:-8882};|g" /etc/nginx/conf.d/default.conf
+  if [[ "${XPRA_PORT:-8882}" != "8882" ]]; then
+    echo "INFO: Updating nginx upstream xpra port to ${XPRA_PORT}"
+    sudo sed -i "s|proxy_pass .*;|proxy_pass http://127.0.0.1:${XPRA_PORT};|g" /etc/nginx/conf.d/default.conf
+  fi
   sudo nginx
   sudo tail -F /var/log/nginx/{access,error}.log &
 fi
+
+# Copy remote apps binary to shared dir.
+mkdir -p /var/run/appconfig/.remote-apps-launcher/
+cp /opt/remote-apps-launcher/remote-apps /var/run/appconfig/.remote-apps-launcher/
 
 set -o pipefail
 while true; do
@@ -187,6 +242,7 @@ while true; do
     --clipboard-direction=${XPRA_CLIPBOARD_DIRECTION:-"both"} \
     --file-transfer=${XPRA_FILE_TRANSFER:-"on"} \
     --open-files=${XPRA_OPEN_FILES:-"on"} \
+    --start-new-commands=${XPRA_START_COMMANDS:-"no"} \
     --printing=${XPRA_ENABLE_PRINTING:-"yes"} \
     ${XPRA_ARGS}
 

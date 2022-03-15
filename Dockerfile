@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ARG REMOTE_APPS_IMAGE=ghcr.io/selkies-project/selkies-xpra/remote-apps:latest
+FROM ${REMOTE_APPS_IMAGE} as remote-apps
+
 FROM ubuntu:bionic
 
 # Install desktop environment
@@ -95,8 +98,16 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         gstreamer1.0-tools && \
     rm -rf /var/lib/apt/lists/*
 
+# Xpra runtime dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        xvfb \
+        python3-pil \
+        nginx \
+        iso-flags-svg && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install xpra from source
-ARG XPRA_VERSION=v4.3.2
+COPY xpra/ /opt/xpra/
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         cython3 \
         python3-cairo-dev \
@@ -105,9 +116,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         libxres-dev \
         libxkbfile-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    cd /opt && \
-    git clone https://github.com/Xpra-org/xpra -b ${XPRA_VERSION} && \
-    cd xpra && \
+    cd /opt/xpra && \
     /usr/bin/python3.6 setup.py install \
         --prefix=/usr && \
     cd /tmp && rm -Rf /opt/xpra && \
@@ -118,6 +127,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3-pypandoc \
         libxres-dev \
         libxkbfile-dev
+
+# Install remote-apps binary
+COPY --from=remote-apps /opt/remote-apps /opt/remote-apps-launcher/
 
 # Install Xpra HTML5 client from forked submodule
 # NOTE: installer depends on working non-submodule get repo.
@@ -130,29 +142,24 @@ RUN cd /opt/xpra-html5 && \
     git config --global user.name "Selkies Builder" && \
     git init && git checkout -b selkies-build-patches && \
     git add . && git commit -m "selkies-build-patches" && \
-    python3.6 ./setup.py install "/" "/usr/share/xpra/www/" "/etc/xpra/html5-client" ${MINIFIER}
+    python3.6 ./setup.py install "/" "/usr/share/xpra/www/" "/etc/xpra/html5-client" ${MINIFIER} && \
+    cd /tmp && rm -rf /opt/xpra-html5
 
 # Install flags SVG for keyboard layout flag icons.
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        iso-flags-svg && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /usr/share/xpra/www/flags && \
+RUN mkdir -p /usr/share/xpra/www/flags && \
     ln -s /usr/share/iso-flags-svg/country-4x3 /usr/share/xpra/www/flags/4x3
 
-# Xpra runtime dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        xvfb \
-        python3-pil && \
-    rm -rf /var/lib/apt/lists/*
+# Install nginx proxy for Xpra
+COPY config/nginx.conf /etc/nginx/conf.d/default.conf
 
 ENV PYTHONPATH=/usr/lib/python3.6/site-packages
 
 # Install Vulkan ICD
-COPY nvidia_icd.json /usr/share/vulkan/icd.d/
+COPY config/nvidia_icd.json /usr/share/vulkan/icd.d/
 
 # Install EGL config
 RUN mkdir -p /usr/share/glvnd/egl_vendor.d
-COPY 10_nvidia.json /usr/share/glvnd/egl_vendor.d/
+COPY config/10_nvidia.json /usr/share/glvnd/egl_vendor.d/
 
 ENV DISPLAY :0
 ENV SDL_AUDIODRIVER pulse
@@ -176,20 +183,11 @@ RUN \
     mkdir -p /etc/xdg/menus && \
     echo "<Menu></Menu>" > /etc/xdg/menus/kde-debian-menu.menu
 
-# Patch HTML for PWA
-RUN \ 
-    sed -i \
-        -e 's|</head>|        <meta name="viewport" content="width=device-width, initial-scale=1.0">\n        </head>|' \
-        -e 's|</head>|        <link rel="manifest" href="manifest.json" crossorigin="use-credentials">\n        </head>|' \
-        -e 's|</head>|        <meta name="theme-color" content="white"/>\n        </head>|' \
-        -e 's|</body>|        <script type="application/javascript">window.onload = () => {"use strict"; if ("serviceWorker" in navigator) { navigator.serviceWorker.register("./sw.js");}}</script>\n    </body>|' /usr/share/xpra/www/index.html && \
-    rm -f /usr/share/xpra/www/index.html.*
-
 # Patch to fix Xpra webworker on Safari
-COPY 10_content_security_policy.txt /etc/xpra/http-headers/10_content_security_policy.txt
+COPY config/10_content_security_policy.txt /etc/xpra/http-headers/10_content_security_policy.txt
 
 # Replace connect.html with redirect to Selkies App Launcher
-COPY connect.html /usr/share/xpra/www/connect.html
+COPY config/connect.html /usr/share/xpra/www/connect.html
 RUN rm -f /usr/share/xpra/www/connect.html.*
 
 # Copy PWA source files
@@ -199,11 +197,7 @@ COPY pwa/sw.js /usr/share/xpra/www/sw.js
 # Patch the service worker with a new cache version so that it is refreshed.
 RUN sudo sed -i -e "s|CACHE_VERSION|$(date +%s)|g" '/usr/share/xpra/www/sw.js'
 
-# Install nginx proxy for Xpra
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        nginx && \
-    rm -rf /var/lib/apt/lists/*
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/tini", "--", "/entrypoint.sh"]
+
+WORKDIR /usr/lib/python3.6/site-packages/xpra/
