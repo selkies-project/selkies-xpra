@@ -1,0 +1,79 @@
+version: "3.9"
+services:
+  desktop:
+    image: ${XPRA_DESKTOP_IMAGE:-xpra-dev-desktop:latest}
+    build:
+      context: dev-desktop
+      dockerfile: Dockerfile
+    entrypoint: ["/bin/bash", "/dev_entrypoint.sh"]
+    user: "1000:1000"
+    privileged: false
+    security_opt:
+      - seccomp:unconfined # required for docker-in-docker to get Chrome to work.
+    environment:
+      - "VDI_USER=selkies"
+      - "VDI_GUI=desktop"
+      - "XPRA_ENABLE_XFDESKTOP=false"
+    volumes:
+      # Modify entrypoint to do things like wait for xpra, x11 and start remote-apps service. 
+      - ./dev-server/dev_desktop_entrypoint.sh:/dev_entrypoint.sh
+
+      # Shared volumes with the xpra container.
+      - appconfig:/var/run/appconfig
+      - x11:/tmp/.X11-unix
+
+      # Useful for general debugging and/or nested development.
+      - ./:/hostfs
+    hostname: desktop
+  remote-apps:
+    # Build-only service, binaries are copied from image into the xpra image.
+    command: "tail -F /dev/null"
+    image: ghcr.io/selkies-project/selkies-xpra/remote-apps:latest
+    build:
+      context: remote-apps
+      dockerfile: Dockerfile
+  xpra:
+    image: ghcr.io/selkies-project/selkies-vdi/xpra:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REMOTE_APPS_IMAGE: ${REMOTE_APPS_IMAGE:-ghcr.io/selkies-project/selkies-xpra/remote-apps:latest}
+    environment:
+      - "XPRA=tcp://127.0.0.1:8882"
+      - "XPRA_PWA_APP_PATH=xpra"
+      - "XPRA_WS_PATH=/xpra/ws"
+      - "XPRA_ARGS=--sharing=yes"
+      - "XPRA_HTML5_SETTING_auto_fullscreen_desktop_class=xfdesktop"
+      - "XPRA_PACKET_ENCODERS=bencode,rencodeplus"
+      # PWA support requires a valid icon. The entrypoint either loads this from base64 ENV var or a url.
+      - "XPRA_PWA_ICON_URL=https://xpra.org/icons/xpra-logo.png"
+    ports:
+      # Port to nginx proxy
+      - "8080:8082"
+    volumes:
+      # nginx config that handles /xpra/ app path prefix, in production, /xpra/ is the app name.
+      # also proxies access to the remote-apps service running in the desktop container. 
+      - ./dev-server/nginx.conf:/etc/nginx/conf.d/default.conf
+
+      # Mount local dev files to refresh for html5 changes.
+      - ./xpra-html5/html5/css:/usr/share/xpra/www/css
+      - ./xpra-html5/html5/fonts:/usr/share/xpra/www/fonts
+      - ./xpra-html5/html5/icons:/usr/share/xpra/www/icons
+      - ./xpra-html5/html5/js:/usr/share/xpra/www/js
+      - ./xpra-html5/html5/index.html:/usr/share/xpra/www/index.html
+
+
+      # Shared volumes with the desktop container.
+      - appconfig:/var/run/appconfig
+      - x11:/tmp/.X11-unix
+
+volumes:
+  appconfig:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  x11:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
