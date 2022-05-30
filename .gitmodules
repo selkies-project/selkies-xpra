@@ -1,6 +1,3 @@
 [submodule "xpra-html5"]
 	path = xpra-html5
 	url = https://github.com/selkies-project/xpra-html5.git
-[submodule "xpra"]
-	path = xpra
-	url = https://github.com/selkies-project/xpra.git
