@@ -1,0 +1,36 @@
+name: Build & publish all images
+
+on:
+  push:
+    branches:
+      - dev
+      - master
+    paths:
+      - ".github/**"
+  workflow_dispatch:
+
+jobs:
+  # Note: When modifying this job, copy modifications to all other workflows' image jobs.
+  all_images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: xpra
+            source_directory: .
+            submodules: recursive
+
+    name: ${{ matrix.name }}${{ matrix.version_suffix }} image build & publish
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: ${{ matrix.submodules }}
+
+      - name: Build & publish ${{ matrix.name }} image
+        uses: ./.github/actions/build_and_publish_image
+        with:
+          github_personal_access_token: ${{ secrets.GITHUB_TOKEN }}
+          github_username: ${{ github.actor }}
+          image_name: ${{ matrix.name }}
+          image_source_directory: ${{ matrix.source_directory }}
+          image_version_1: ${{ github.ref_name }}${{ matrix.version_suffix }}
