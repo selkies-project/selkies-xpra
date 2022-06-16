@@ -93,15 +93,19 @@ sudo sed -i \
 
 if [[ -n "${XPRA_PWA_ICON_URL}" ]]; then
   echo "INFO: Converting icon to PWA standard"
+  DEST_FILE=/tmp/icon.png
   if [[ "${XPRA_PWA_ICON_URL}" =~ "data:image/png;base64" ]]; then
-    echo "${XPRA_PWA_ICON_URL}" | cut -d ',' -f2 | base64 -d > /tmp/icon.png
+    echo "${XPRA_PWA_ICON_URL}" | cut -d ',' -f2 | base64 -d > ${DEST_FILE}
+  elif [[ "${XPRA_PWA_ICON_URL}" =~ "data:image/svg+xml;base64" ]]; then
+    DEST_FILE=/tmp/icon.svg
+    echo "${XPRA_PWA_ICON_URL}" | cut -d ',' -f2 | base64 -d > /tmp/icon.svg
   else
-    curl -o /tmp/icon.png -s -f -L "${XPRA_PWA_ICON_URL}" || true
+    curl -o ${DEST_FILE} -s -f -L "${XPRA_PWA_ICON_URL}" || true
   fi
-  if [[ -e /tmp/icon.png ]]; then
+  if [[ -e ${DEST_FILE} ]]; then
     echo "INFO: Creating PWA icon sizes"
-    sudo convert /tmp/icon.png /usr/share/xpra/www/icon.png || true
-    rm -f /tmp/icon.png
+    sudo convert ${DEST_FILE} /usr/share/xpra/www/icon.png || true
+    rm -f ${DEST_FILE}
     for size in 192x192 512x512; do
       sudo convert -resize ${size} -size ${size} /usr/share/xpra/www/icon.png /usr/share/xpra/www/icon-${size}.png || true
     done
