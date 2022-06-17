@@ -6,7 +6,7 @@
             // Reidrect to specific URL.
             const urlSearchParams = new URLSearchParams(window.location.search);
             const params = Object.fromEntries(urlSearchParams.entries());
-            var redirect = params['r'];
+            const redirect = params['r'];
             if (redirect) {
                 dest = redirect;
             }

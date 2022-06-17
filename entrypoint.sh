@@ -104,12 +104,12 @@ if [[ -n "${XPRA_PWA_ICON_URL}" ]]; then
   fi
   if [[ -e ${DEST_FILE} ]]; then
     echo "INFO: Creating PWA icon sizes"
-    sudo convert ${DEST_FILE} /usr/share/xpra/www/icon.png || true
+    sudo convert -background none ${DEST_FILE} /usr/share/xpra/www/icon.png || true
     rm -f ${DEST_FILE}
-    for size in 192x192 512x512; do
-      sudo convert -resize ${size} -size ${size} /usr/share/xpra/www/icon.png /usr/share/xpra/www/icon-${size}.png || true
+    for size in 180x180 192x192 512x512; do
+      sudo convert -resize ${size} -background none -gravity center -extent ${size} /usr/share/xpra/www/icon.png /usr/share/xpra/www/icon-${size}.png || true
     done
-    sudo convert -resize 180x180 /usr/share/xpra/www/icon.png /usr/share/xpra/www/apple-touch-icon.png || true
+    sudo ln -s /usr/share/xpra/www/icon-180x180.png /usr/share/xpra/www/apple-touch-icon.png || true
   else
     echo "WARN: failed to download PWA icon, PWA features may not be available: ${XPRA_PWA_ICON_URL}"
   fi

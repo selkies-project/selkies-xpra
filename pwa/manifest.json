@@ -2,7 +2,8 @@
     "name": "XPRA_PWA_APP_NAME",
     "short_name": "XPRA_PWA_APP_NAME",
     "lang": "en-US",
-    "start_url": "/XPRA_PWA_APP_PATH/index.html",
+    "start_url": "/XPRA_PWA_APP_PATH/connect.html?launch=XPRA_PWA_APP_PATH",
+    "id": "/XPRA_PWA_APP_PATH/connect.html?launch=XPRA_PWA_APP_PATH",
     "display": "XPRA_PWA_DISPLAY",
     "background_color": "white",
     "theme_color": "white",
@@ -18,4 +19,4 @@
         "type": "image/png"
       }
     ]
-  }
+}
