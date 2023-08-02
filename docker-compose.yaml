@@ -1,0 +1,49 @@
+volumes:
+  x11:
+  appconfig:
+services:
+  xserver:
+    image: ghcr.io/selkies-project/selkies-vdi/xserver:master
+    tmpfs:
+      - /dev/shm
+    volumes:
+      - x11:/tmp/.X11-unix
+      - appconfig:/var/run/appconfig
+    environment:
+      DISPLAY: ":0"
+      X11_DRIVER: software
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    volumes:
+      - x11:/tmp/.X11-unix
+      - appconfig:/var/run/appconfig
+    environment:
+      DISPLAY: ":0"
+  xpra:
+    build: .
+    tmpfs:
+      - /dev/shm
+    volumes:
+      - x11:/tmp/.X11-unix
+      - appconfig:/var/run/appconfig
+    environment:
+      DISPLAY: ":0"
+      XPRA_WS_PATH: "/ws"
+      XPRA_HTML5_SETTING_video: "false"
+      XPRA_HTML5_SETTING_sound: "false"
+      XPRA_HTML5_SETTING_encoding: jpeg
+      XPRA_HTML5_SETTING_auto_fullscreen_desktop_class: xfdesktop
+      XPRA_HTML5_SETTING_keyboard: "false"
+      XPRA_HTML5_SETTING_window_tray: "true"
+      XPRA_HTML5_SETTING_toolbar_position: top
+      XPRA_HTML5_SETTING_device_dpi_scaling: "true"
+      XPRA_CLIPBOARD_DIRECTION: "both" # Values are to-server|to-client|both: "to-server"
+      XPRA_ENABLE_CLIPBOARD: "yes"
+      XPRA_FILE_TRANSFER: "off"
+      XPRA_OPEN_FILES: "off"
+      XPRA_ENABLE_PRINTING: "no"
+      XPRA_ARGS: "--bandwidth-detection=False --min-speed=1 --min-quality=1 --packet-encoders=bencode"
+    ports:
+      - "8080:8082"

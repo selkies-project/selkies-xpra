@@ -71,13 +71,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         python-cups && \
     rm -rf /var/lib/apt/lists/*
 
-# Install ffmpeg-xpra
-RUN curl -o ffmpeg-xpra.deb -L https://www.xpra.org/dists/bionic/main/binary-amd64/ffmpeg-xpra_4.0-1_amd64.deb && \
-    apt-get update && \
-    gdebi -n ffmpeg-xpra.deb && \
-    rm -f ffmpeg-xpra.deb && \
-    rm -rf /var/lib/apt/lists/*
-
 # Install other python dependencies
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3-requests \
